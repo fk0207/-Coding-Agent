@@ -1,4 +1,4 @@
-"""工具模块：定义 agent 可用的工具（读文件 / 写文件 / 执行命令）及其 schema。"""
+"""工具模块：定义 agent 可用的工具（读文件 / 写文件 / 执行命令 / 向用户提问）及其 schema。"""
 import subprocess
 
 
@@ -28,6 +28,12 @@ def run_command(command: str, timeout: int = 30) -> str:
         return (result.stdout + result.stderr).strip() or "(无输出)"
     except subprocess.TimeoutExpired:
         return f"命令超时（>{timeout}s）: {command}"
+
+
+
+
+
+
 
 
 # OpenAI function calling 格式的工具 schema
@@ -68,6 +74,18 @@ TOOLS = [
                 "type": "object",
                 "properties": {"command": {"type": "string", "description": "要执行的 shell 命令"}},
                 "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_user",
+            "description": "向用户提问，获取用户的回答。当需要用户澄清需求、做出选择或补充信息时使用。",
+            "parameters": {
+                "type": "object",
+                "properties": {"question": {"type": "string", "description": "要问用户的问题"}},
+                "required": ["question"],
             },
         },
     },

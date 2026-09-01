@@ -27,5 +27,6 @@ def test_run_command_timeout():
 
 def test_tools_schema_and_handlers_aligned():
     names = {t["function"]["name"] for t in TOOLS}
-    assert names == set(HANDLERS.keys())
-    assert {"read_file", "write_file", "run_command"} <= names
+    # ask_user 是交互式工具，不在 HANDLERS 中，由 agent 特殊处理
+    assert names == set(HANDLERS.keys()) | {"ask_user"}
+    assert {"read_file", "write_file", "run_command", "ask_user"} <= names

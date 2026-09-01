@@ -1,15 +1,22 @@
-"""Task 8：测试 /api/approve 端点与审批协调器 ApprovalGate。"""
+"""Task 8：测试 /api/approve、/api/answer 端点与交互协调器 InteractionGate。"""
 import threading
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from app.main import ApprovalGate, app, gate
+from app.main import InteractionGate, app, gate
 
 
 def test_approve_endpoint_unknown_id():
     client = TestClient(app)
     resp = client.post("/api/approve", json={"id": "nonexistent", "approved": True})
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is False
+
+
+def test_answer_endpoint_unknown_id():
+    client = TestClient(app)
+    resp = client.post("/api/answer", json={"id": "nonexistent", "answer": "x"})
     assert resp.status_code == 200
     assert resp.json()["ok"] is False
 
@@ -34,7 +41,7 @@ def _start_request(g, name, args):
 
 
 def test_approval_gate_request_and_decide():
-    g = ApprovalGate(timeout=5)
+    g = InteractionGate(timeout=5)
     t, emitted, done, result = _start_request(g, "run_command", {"command": "ls"})
 
     assert done.wait(timeout=5)
@@ -48,7 +55,7 @@ def test_approval_gate_request_and_decide():
 
 
 def test_approval_gate_deny():
-    g = ApprovalGate(timeout=5)
+    g = InteractionGate(timeout=5)
     t, emitted, done, result = _start_request(g, "write_file", {"path": "x", "content": "y"})
 
     assert done.wait(timeout=5)
@@ -59,7 +66,7 @@ def test_approval_gate_deny():
 
 
 def test_approval_gate_timeout_defaults_deny():
-    g = ApprovalGate(timeout=0.2)
+    g = InteractionGate(timeout=0.2)
     assert g.request(lambda ev: None, "run_command", {"command": "ls"}) is False
 
 
@@ -73,7 +80,7 @@ def test_chat_stream_emits_approval_request(monkeypatch):
 
     monkeypatch.setattr(gate, "request", fake_request)
 
-    def fake_stream(client, model, messages, tools, handlers, approver=None, max_iterations=10):
+    def fake_stream(client, model, messages, tools, handlers, approver=None, asker=None, max_iterations=10):
         approved = approver("run_command", {"command": "ls"})
         yield {"type": "tool", "tool": "run_command", "args": {"command": "ls"}, "result": "ok" if approved else "denied"}
         yield {"type": "done", "answer": "完成", "trace": []}

@@ -10,8 +10,7 @@ def _run_tools_parallel(handlers, specs):
     """并行执行多个工具调用，返回与 specs 同序的结果列表。
 
     specs: [(name, args), ...]，name 为工具名，args 为解析后的入参字典。
-    单条调用直接执行（避免线程开销）；多条调用用线程池并行，提升 I/O 与
-    subprocess 类工具的执行效率。
+    单条调用直接执行（避免线程开销）；多条调用用线程池并行。
     """
     if len(specs) == 1:
         name, args = specs[0]
@@ -21,18 +20,19 @@ def _run_tools_parallel(handlers, specs):
         return list(pool.map(lambda s: handlers[s[0]](**s[1]), specs))
 
 
-def _execute_with_approval(handlers, specs, approver):
-    """按权限策略执行工具。
+def _execute_with_approval(handlers, specs, approver, asker):
+    """按权限策略执行工具，返回与 specs 同序的结果列表。
 
-
-    危险工具（见 tools.is_dangerous）需 approver 同意；approver 为 None 或返回
-    False 时拒绝执行（不调用 handler）。允许执行的工具用线程池并行运行。
-
-    返回与 specs 同序的结果列表（字符串）。
+    - ask_user：交互式提问，调用 asker(args) 阻塞等待用户回答；
+    - 危险工具：需 approver 同意，approver 为 None 或返回 False 则拒绝；
+    - 其余工具：线程池并行执行。
     """
     results = [None] * len(specs)
     to_run = []  # (index, name, args) 允许执行的部分
     for i, (name, args) in enumerate(specs):
+        if name == "ask_user":
+            results[i] = asker(args) if asker else "用户未回答（ask_user 需交互式环境）"
+            continue
         if is_dangerous(name):
             approved = approver(name, args) if approver else False
             if not approved:
@@ -55,9 +55,10 @@ def run_agent(
     handlers: dict[str, Callable],
     max_iterations: int = 10,
     approver: Optional[Callable[[str, dict], bool]] = None,
-) -> tuple[str, list]:
-    """执行 agent 循环。
 
+    asker: Optional[Callable[[dict], str]] = None,
+) -> tuple[str, list]:
+    """执行 agent 循环（非流式）。
 
     参数：
         client:          OpenAI 兼容 client（含 chat.completions.create）
@@ -67,6 +68,7 @@ def run_agent(
         handlers:        工具名 -> 实现函数 映射（HANDLERS）
         max_iterations:  最大 LLM 迭代次数，防止死循环
         approver:        危险工具审批回调 approver(name, args) -> bool；None 则拒绝
+        asker:           ask_user 提问回调 asker(args) -> str；None 则返回占位
 
     返回：(最终回答文本, 工具调用 trace 列表)
         trace 元素形如 {"tool": 工具名, "args": 入参, "result": 结果文本}
@@ -106,7 +108,7 @@ def run_agent(
             (tc.function.name, json.loads(tc.function.arguments or "{}"))
             for tc in msg.tool_calls
         ]
-        results = _execute_with_approval(handlers, specs, approver)
+        results = _execute_with_approval(handlers, specs, approver, asker)
 
         for tc, (name, args), result in zip(msg.tool_calls, specs, results):
             trace.append({"tool": name, "args": args, "result": str(result)})
@@ -125,17 +127,17 @@ def run_agent_stream(
     handlers: dict[str, Callable],
     max_iterations: int = 10,
     approver: Optional[Callable[[str, dict], bool]] = None,
+    asker: Optional[Callable[[dict], str]] = None,
 ):
     """流式版 agent 循环：逐 token 产出回答，并实时产出工具调用事件。
 
-    与 run_agent 逻辑一致，但以生成器逐条 yield dict 事件：
+    事件类型：
         {"type": "delta", "content": "..."}                       # 回答文本增量
         {"type": "tool", "tool": ..., "args": ..., "result": ...} # 工具调用
         {"type": "done", "answer": "...", "trace": [...]}         # 结束
 
-    说明：推理模型（如 deepseek-v4-pro）的思考过程走 delta.reasoning_content，
-    这里只累积 delta.content（最终回答），因此前端只看到答案逐字流出。
-    危险工具需 approver 同意，approver 为 None 时拒绝执行。
+    危险工具需 approver 同意；ask_user 需 asker 回答；approver/asker 为 None 时
+    分别拒绝/占位。
     """
     trace = []
     for _ in range(max_iterations):
@@ -198,7 +200,7 @@ def run_agent_stream(
             (tc["name"], json.loads(tc["arguments"] or "{}"))
             for tc in tool_calls
         ]
-        results = _execute_with_approval(handlers, specs, approver)
+        results = _execute_with_approval(handlers, specs, approver, asker)
 
         for tc, (name, args), result in zip(tool_calls, specs, results):
             trace.append({"tool": name, "args": args, "result": str(result)})
