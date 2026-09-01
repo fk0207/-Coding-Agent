@@ -4,17 +4,30 @@ import subprocess
 
 def read_file(path: str) -> str:
     """读取指定路径文件的文本内容。"""
-    raise NotImplementedError("TODO(Task 2): 读取文件并返回内容")
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        return f.read()
 
 
 def write_file(path: str, content: str) -> str:
     """将内容写入指定路径文件（覆盖写），返回确认信息。"""
-    raise NotImplementedError("TODO(Task 2): 写入文件并返回确认信息")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return f"已写入文件: {path}"
 
 
 def run_command(command: str, timeout: int = 30) -> str:
     """执行 shell 命令并返回 stdout/stderr（超时返回提示）。"""
-    raise NotImplementedError("TODO(Task 2): 执行 shell 命令并返回输出")
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return (result.stdout + result.stderr).strip() or "(无输出)"
+    except subprocess.TimeoutExpired:
+        return f"命令超时（>{timeout}s）: {command}"
 
 
 # OpenAI function calling 格式的工具 schema
