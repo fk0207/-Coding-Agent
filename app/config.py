@@ -19,4 +19,9 @@ def load_config() -> Config:
     未设置时使用默认值（base_url=https://api.openai.com/v1, model=gpt-4o-mini,
     work_dir=./workspace）。
     """
-    raise NotImplementedError("TODO(Task 1): 读取环境变量并返回 Config")
+    return Config(
+        api_key=os.environ.get("OPENAI_API_KEY", ""),
+        base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+        work_dir=os.environ.get("AGENT_WORK_DIR", "./workspace"),
+    )
