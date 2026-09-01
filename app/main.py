@@ -12,7 +12,7 @@ from .agent import run_agent
 from .config import load_config
 from .tools import TOOLS, HANDLERS
 
-load_dotenv(Path(__file__).parent.parent / ".env")
+load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 config = load_config()
 app = FastAPI(title="Minimal Coding Agent")
 
