@@ -11,6 +11,47 @@ function addBubble(text, cls) {
   return div;
 }
 
+async function respondApproval(id, approved, box) {
+  box.querySelectorAll("button").forEach((b) => (b.disabled = true));
+  const status = box.querySelector(".approval-status");
+  try {
+    await fetch("/api/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, approved }),
+    });
+    status.textContent = approved ? "已同意" : "已拒绝";
+  } catch (err) {
+    status.textContent = "提交失败: " + err.message;
+  }
+}
+
+function addApprovalBubble(id, tool, args) {
+  const box = document.createElement("div");
+  box.className = "bubble approval";
+
+  const label = document.createElement("div");
+  label.className = "approval-label";
+  label.textContent = `⚠️ 需要确认执行危险工具 ${tool}(${JSON.stringify(args)})`;
+
+  const yes = document.createElement("button");
+  yes.className = "yes";
+  yes.textContent = "同意";
+  yes.onclick = () => respondApproval(id, true, box);
+
+  const no = document.createElement("button");
+  no.className = "no";
+  no.textContent = "拒绝";
+  no.onclick = () => respondApproval(id, false, box);
+
+  const status = document.createElement("div");
+  status.className = "approval-status";
+
+  box.append(label, yes, no, status);
+  chat.appendChild(box);
+  chat.scrollTop = chat.scrollHeight;
+}
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const message = input.value.trim();
@@ -54,6 +95,8 @@ form.addEventListener("submit", async (e) => {
             else answerBubble.textContent = answer;
           } else if (ev.type === "tool") {
             addBubble(`🛠 ${ev.tool}(${JSON.stringify(ev.args)})\n→ ${ev.result}`, "trace");
+          } else if (ev.type === "approval_request") {
+            addApprovalBubble(ev.id, ev.tool, ev.args);
           } else if (ev.type === "done") {
             if (!answer && ev.answer) answer = ev.answer;
           }

@@ -9,7 +9,7 @@ from app.main import app
 def test_chat_stream_endpoint(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
 
-    def fake_run_agent_stream(client, model, messages, tools, handlers, max_iterations=10):
+    def fake_run_agent_stream(client, model, messages, tools, handlers, max_iterations=10, approver=None):
         yield {"type": "delta", "content": "完成"}
         yield {"type": "tool", "tool": "read_file", "args": {"path": "x"}, "result": "y"}
         yield {"type": "done", "answer": "完成", "trace": []}

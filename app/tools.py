@@ -80,3 +80,12 @@ HANDLERS = {
     "write_file": write_file,
     "run_command": run_command,
 }
+
+
+# 危险工具集合：调用前需用户同意
+DANGEROUS_TOOLS = {"run_command", "write_file"}
+
+
+def is_dangerous(name: str) -> bool:
+    """判断工具是否危险（危险工具调用前需用户同意）。"""
+    return name in DANGEROUS_TOOLS

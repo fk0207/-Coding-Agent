@@ -1,7 +1,9 @@
 """Agent 循环：反复调用 LLM，需要时执行工具，直到产出最终回答。"""
 import json
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable
+from typing import Any, Callable, Optional
+
+from .tools import is_dangerous
 
 
 def _run_tools_parallel(handlers, specs):
@@ -19,6 +21,32 @@ def _run_tools_parallel(handlers, specs):
         return list(pool.map(lambda s: handlers[s[0]](**s[1]), specs))
 
 
+def _execute_with_approval(handlers, specs, approver):
+    """按权限策略执行工具。
+
+
+    危险工具（见 tools.is_dangerous）需 approver 同意；approver 为 None 或返回
+    False 时拒绝执行（不调用 handler）。允许执行的工具用线程池并行运行。
+
+    返回与 specs 同序的结果列表（字符串）。
+    """
+    results = [None] * len(specs)
+    to_run = []  # (index, name, args) 允许执行的部分
+    for i, (name, args) in enumerate(specs):
+        if is_dangerous(name):
+            approved = approver(name, args) if approver else False
+            if not approved:
+                results[i] = f"已拒绝执行危险工具 {name}（未经用户同意）"
+                continue
+        to_run.append((i, name, args))
+
+    if to_run:
+        executed = _run_tools_parallel(handlers, [(n, a) for _, n, a in to_run])
+        for (i, _, _), r in zip(to_run, executed):
+            results[i] = r
+    return results
+
+
 def run_agent(
     client: Any,
     model: str,
@@ -26,8 +54,10 @@ def run_agent(
     tools: list,
     handlers: dict[str, Callable],
     max_iterations: int = 10,
+    approver: Optional[Callable[[str, dict], bool]] = None,
 ) -> tuple[str, list]:
     """执行 agent 循环。
+
 
     参数：
         client:          OpenAI 兼容 client（含 chat.completions.create）
@@ -36,6 +66,7 @@ def run_agent(
         tools:           工具 schema 列表（TOOLS）
         handlers:        工具名 -> 实现函数 映射（HANDLERS）
         max_iterations:  最大 LLM 迭代次数，防止死循环
+        approver:        危险工具审批回调 approver(name, args) -> bool；None 则拒绝
 
     返回：(最终回答文本, 工具调用 trace 列表)
         trace 元素形如 {"tool": 工具名, "args": 入参, "result": 结果文本}
@@ -75,7 +106,7 @@ def run_agent(
             (tc.function.name, json.loads(tc.function.arguments or "{}"))
             for tc in msg.tool_calls
         ]
-        results = _run_tools_parallel(handlers, specs)
+        results = _execute_with_approval(handlers, specs, approver)
 
         for tc, (name, args), result in zip(msg.tool_calls, specs, results):
             trace.append({"tool": name, "args": args, "result": str(result)})
@@ -93,6 +124,7 @@ def run_agent_stream(
     tools: list,
     handlers: dict[str, Callable],
     max_iterations: int = 10,
+    approver: Optional[Callable[[str, dict], bool]] = None,
 ):
     """流式版 agent 循环：逐 token 产出回答，并实时产出工具调用事件。
 
@@ -103,6 +135,7 @@ def run_agent_stream(
 
     说明：推理模型（如 deepseek-v4-pro）的思考过程走 delta.reasoning_content，
     这里只累积 delta.content（最终回答），因此前端只看到答案逐字流出。
+    危险工具需 approver 同意，approver 为 None 时拒绝执行。
     """
     trace = []
     for _ in range(max_iterations):
@@ -165,7 +198,7 @@ def run_agent_stream(
             (tc["name"], json.loads(tc["arguments"] or "{}"))
             for tc in tool_calls
         ]
-        results = _run_tools_parallel(handlers, specs)
+        results = _execute_with_approval(handlers, specs, approver)
 
         for tc, (name, args), result in zip(tool_calls, specs, results):
             trace.append({"tool": name, "args": args, "result": str(result)})
