@@ -1,6 +1,22 @@
 """Agent 循环：反复调用 LLM，需要时执行工具，直到产出最终回答。"""
 import json
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
+
+
+def _run_tools_parallel(handlers, specs):
+    """并行执行多个工具调用，返回与 specs 同序的结果列表。
+
+    specs: [(name, args), ...]，name 为工具名，args 为解析后的入参字典。
+    单条调用直接执行（避免线程开销）；多条调用用线程池并行，提升 I/O 与
+    subprocess 类工具的执行效率。
+    """
+    if len(specs) == 1:
+        name, args = specs[0]
+        return [handlers[name](**args)]
+
+    with ThreadPoolExecutor(max_workers=len(specs)) as pool:
+        return list(pool.map(lambda s: handlers[s[0]](**s[1]), specs))
 
 
 def run_agent(
@@ -55,10 +71,13 @@ def run_agent(
             }
         )
 
-        for tc in msg.tool_calls:
-            name = tc.function.name
-            args = json.loads(tc.function.arguments or "{}")
-            result = handlers[name](**args)
+        specs = [
+            (tc.function.name, json.loads(tc.function.arguments or "{}"))
+            for tc in msg.tool_calls
+        ]
+        results = _run_tools_parallel(handlers, specs)
+
+        for tc, (name, args), result in zip(msg.tool_calls, specs, results):
             trace.append({"tool": name, "args": args, "result": str(result)})
             messages.append(
                 {"role": "tool", "tool_call_id": tc.id, "content": str(result)}
@@ -142,10 +161,13 @@ def run_agent_stream(
             }
         )
 
-        for tc in tool_calls:
-            name = tc["name"]
-            args = json.loads(tc["arguments"] or "{}")
-            result = handlers[name](**args)
+        specs = [
+            (tc["name"], json.loads(tc["arguments"] or "{}"))
+            for tc in tool_calls
+        ]
+        results = _run_tools_parallel(handlers, specs)
+
+        for tc, (name, args), result in zip(tool_calls, specs, results):
             trace.append({"tool": name, "args": args, "result": str(result)})
             yield {
                 "type": "tool",
