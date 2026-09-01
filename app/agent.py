@@ -1,4 +1,5 @@
 """Agent 循环：反复调用 LLM，需要时执行工具，直到产出最终回答。"""
+import json
 from typing import Any, Callable
 
 
@@ -23,4 +24,44 @@ def run_agent(
     返回：(最终回答文本, 工具调用 trace 列表)
         trace 元素形如 {"tool": 工具名, "args": 入参, "result": 结果文本}
     """
-    raise NotImplementedError("TODO(Task 3): 实现 LLM + 工具调用的循环")
+    trace = []
+    for _ in range(max_iterations):
+        resp = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+        )
+        msg = resp.choices[0].message
+
+        if not msg.tool_calls:
+            return (msg.content or "", trace)
+
+        messages.append(
+            {
+                "role": "assistant",
+                "content": msg.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in msg.tool_calls
+                ],
+            }
+        )
+
+        for tc in msg.tool_calls:
+            name = tc.function.name
+            args = json.loads(tc.function.arguments or "{}")
+            result = handlers[name](**args)
+            trace.append({"tool": name, "args": args, "result": str(result)})
+            messages.append(
+                {"role": "tool", "tool_call_id": tc.id, "content": str(result)}
+            )
+
+    return ("已达到最大迭代次数，任务可能未完成。", trace)
