@@ -7,6 +7,14 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <!-- TODO(Task 5): 聊天界面结构（消息区 + 输入框 + 发送按钮） -->
+  <main class="app">
+    <header><h1>Minimal Coding Agent</h1></header>
+    <section id="chat" class="chat"></section>
+    <form id="form" class="input-row">
+      <input id="message" placeholder="输入需求，如：总结 docs/README.md 的内容" autocomplete="off" />
+      <button type="submit">发送</button>
+    </form>
+  </main>
+  <script src="/static/app.js"></script>
 </body>
 </html>
