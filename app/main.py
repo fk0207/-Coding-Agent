@@ -1,6 +1,7 @@
 """FastAPI 应用：静态页面托管 + POST /api/chat 接口。"""
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,6 +12,7 @@ from .agent import run_agent
 from .config import load_config
 from .tools import TOOLS, HANDLERS
 
+load_dotenv(Path(__file__).parent.parent / ".env")
 config = load_config()
 app = FastAPI(title="Minimal Coding Agent")
 
